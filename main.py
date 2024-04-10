@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify, redirect, url_for, request
 import requests
 import json
 from datetime import datetime
@@ -7,7 +7,6 @@ app = Flask(__name__)
 
 GRAPHQL_URL = 'https://optimism.easscan.org/graphql'
 
-# Updated fetch_attestations to accept an attester address
 def fetch_attestations(attester_address):
     query = '''
     query Attestations($attesterAddress: [String!]) {
@@ -36,18 +35,20 @@ def fetch_attestations(attester_address):
 
 @app.route('/attestations/<attester_address>', methods=['GET'])
 def get_attestations(attester_address):
-    
+
     if not attester_address:
         return jsonify({"error": "Attester address is required as a query parameter."}), 400
-
+    
     try:
         attestations_data = fetch_attestations(attester_address)
+
+        # Check if the response from GraphQL is empty
+        if not attestations_data:
+            return jsonify({"message": "No attestations made by this Issuer"}), 404
       
         structured_attestations = []
         for attestation in attestations_data:
-            # Parse the decodedDataJson from string to list of dictionaries
             decoded_data_list = json.loads(attestation['decodedDataJson'])
-            # Temporary storage for fields that are not arrays
             non_array_fields = {
                 "issuerName": "",
                 "issuerDescription": "",
@@ -55,7 +56,6 @@ def get_attestations(attester_address):
                 "apiDocsURI": ""
             }
             
-            # Storage for array fields to process them separately
             array_fields = {
                 "schemaUID": [],
                 "schemaDescription": [],
@@ -66,7 +66,6 @@ def get_attestations(attester_address):
                 key_name = decoded_data_item['name']
                 value = decoded_data_item['value']['value']
 
-                # Separate handling for array and non-array fields
                 if key_name in non_array_fields:
                     non_array_fields[key_name] = value
                 elif key_name in array_fields and isinstance(value, list):
@@ -95,7 +94,28 @@ def get_attestations(attester_address):
     
 @app.route('/', methods=['GET'])
 def get_home():
-     return "Welcome to DAO Attestations API"
+    docs_html = """
+    <h1>Welcome to the DAO Attestations API</h1>
+    <p>This API provides structured attestation data for DAO issuers on the Optimism network.</p>
+    <h2>Endpoints</h2>
+    <ul>
+        <li><b>/attestations/&lt;attester_address&gt;</b>: Fetch and return attestations for a given attester address.</li>
+    </ul>
+    <h2>Example Query</h2>
+    <p>To fetch attestations for a specific attester address, you would use the following URL format:</p>
+    <code>/attestations/0x88e50e06efB2B748E2B9670d2a6668237167382B</code>
+    <p>This would return all attestations made by the issuer at the address <code>0x88e50e06efB2B748E2B9670d2a6668237167382B</code>.</p>
+    <p>Refer to the GitHub repository for more detailed documentation: <a href='https://github.com/metagov/Attestation-List-API'>Attestations List API by DAOstar</a></p>
+    ---
+    <h5><a href='https://daostar.org'>A DAOstar Project</a></h5>
+    """
+    return docs_html
+
+# Redirect any other endpoint to '/'
+@app.route('/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE'])
+def catch_all(path):
+    return redirect(url_for('get_home'))
+
 
 
 if __name__ == '__main__':

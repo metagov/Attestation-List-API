@@ -23,8 +23,8 @@ To set up the DAO Attestations API on your local machine, follow these steps:
 1. **Clone the repository**
 
    ```bash
-   git clone https://yourrepository.git
-   cd yourrepository
+   git clone https://github.com/metagov/Attestation-List-API
+   cd Attestation-List-API
    ```
 
 2. **Set up a virtual environment (optional but recommended)**
@@ -43,7 +43,7 @@ To set up the DAO Attestations API on your local machine, follow these steps:
 4. **Run the application**
 
    ```bash
-   python app.py
+   python main.py
    ```
 
    The API will be accessible at `http://127.0.0.1:5000/`.
@@ -79,7 +79,7 @@ To set up the DAO Attestations API on your local machine, follow these steps:
 - **Fetching Attestations**
 
   ```bash
-  curl http://127.0.0.1:5000/attestations/0x88e50e06efB2B748E2B9670d2a6668237167382B
+  curl http://127.0.0.1:5000/attestations/0x88e50e06efB2B748E2B9670d2a66682371673888
   ```
 
 ## Development
