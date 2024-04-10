@@ -88,7 +88,7 @@ To contribute to the development of the DAO Attestations API, you can start by c
 
 ## Support
 
-For support, please open an issue in the GitHub repository or contact the repository owner.
+For support, please open an issue in the GitHub repository or contact Rashmi-278.
 
 ## License
 
