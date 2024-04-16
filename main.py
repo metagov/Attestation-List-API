@@ -2,8 +2,14 @@ from flask import Flask, jsonify, redirect, url_for, request
 import requests
 import json
 from datetime import datetime
+from flask import Flask
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app) 
+
+# CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
+
 
 def convert_unix_to_utc(unix_time):
     """Converts UNIX timestamp to a UTC datetime string."""
