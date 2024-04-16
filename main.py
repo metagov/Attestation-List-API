@@ -143,7 +143,6 @@ def get_attestations(attester_address):
             "logo": non_array_fields['logo'],
             "apiDocsURI": non_array_fields['apiDocsURI'],
             "schemas": structured_schemas_by_attester,
-            "attesterAddress": attester_address
         }
 
         return jsonify(structured_data)
