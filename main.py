@@ -97,7 +97,8 @@ def get_attestations(attester_address):
                 "issuerName": "",
                 "issuerDescription": "",
                 "logo": "",
-                "apiDocsURI": ""
+                "apiDocsURI": "",
+                "attesterAddress": ""
             }
 
             array_fields = {
@@ -141,7 +142,8 @@ def get_attestations(attester_address):
             "issuerDescription": non_array_fields['issuerDescription'],
             "logo": non_array_fields['logo'],
             "apiDocsURI": non_array_fields['apiDocsURI'],
-            "schemas": structured_schemas_by_attester
+            "schemas": structured_schemas_by_attester,
+            "attesterAddress": attester_address
         }
 
         return jsonify(structured_data)
