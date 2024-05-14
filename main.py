@@ -7,7 +7,7 @@ import redis
 
 app = Flask(__name__)
 CORS(app)
-redis_url = 'rediss://red-cp1lchmct0pc73d37gl0:KQhCZrgGRc4HGfnjlk2H6iIsJZHTbB5r@oregon-redis.render.com:6379'
+redis_url = 'redis://red-cp1lchmct0pc73d37gl0:6379'
 r = redis.Redis.from_url(redis_url, db=0, decode_responses=True)
 
 def test_redis():
