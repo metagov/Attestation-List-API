@@ -189,27 +189,33 @@ def get_attestations(attester_address):
 
             for i in range(len(array_fields["schemaUID"])):
                 schema_id = array_fields['schemaUID'][i]
-                if schema_id in daoip7_schemas: # Context set check
+                if schema_id in daoip7_schemas:  # Context set check
                     schema_details = fetch_schema_details(schema_id) or {}
                     if not schema_details:  # Skip if schema_details is empty
                         continue
-                    structured_schemas_by_attester.append({
-                        "schemaUID": array_fields['schemaUID'][i],
-                        "schemaDescription": array_fields['schemaDescription'][i],
-                        "networkID": array_fields['networkID'][i],
-                        "schemaDetails": {
-                            "creator": schema_details.get("creator", ""),
-                            "id": schema_details.get("id", ""),
-                            "resolver": schema_details.get("resolver", ""),
-                            "revocable": schema_details.get("revocable", False),
-                            "schema": schema_details.get("schema", ""),
-                            "attestationsCount": schema_details.get("_count", {}).get("attestations", 0),
-                            "time": convert_unix_to_utc(schema_details.get("time", 0)),
-                            "txid": schema_details.get("txid", "")
-                        }
-                    })
-                else:
-                    continue
+
+                    # Parse schema JSON to check for the "context" field
+                    schema_json = json.loads(schema_details.get("schema", "{}"))
+                    
+                    # Check if "context" key exists in schema_json, case-insensitive
+                    if any(key.lower() == 'context' for key in schema_json.keys()) or not schema_json:
+                        structured_schemas_by_attester.append({
+                            "schemaUID": schema_id,
+                            "schemaDescription": array_fields['schemaDescription'][i],
+                            "networkID": array_fields['networkID'][i],
+                            "schemaDetails": {
+                                "creator": schema_details.get("creator", ""),
+                                "id": schema_details.get("id", ""),
+                                "resolver": schema_details.get("resolver", ""),
+                                "revocable": schema_details.get("revocable", False),
+                                "schema": schema_details.get("schema", ""),
+                                "attestationsCount": schema_details.get("_count", {}).get("attestations", 0),
+                                "time": convert_unix_to_utc(schema_details.get("time", 0)),
+                                "txid": schema_details.get("txid", "")
+                            }
+                        })
+                    else:
+                        continue
 
         structured_data = {
             "issuerName": non_array_fields['issuerName'],
