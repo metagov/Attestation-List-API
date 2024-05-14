@@ -111,6 +111,8 @@ def get_attestations(attester_address):
             for i in range(len(array_fields["schemaUID"])):
                 schema_id = array_fields['schemaUID'][i]
                 schema_details = fetch_schema_details(schema_id) or {}
+                if not schema_details:  # Skip if schema_details is empty
+                    continue
                 structured_schemas_by_attester.append({
                     "schemaUID": array_fields['schemaUID'][i],
                     "schemaDescription": array_fields['schemaDescription'][i],
