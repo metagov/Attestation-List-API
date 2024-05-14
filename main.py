@@ -7,7 +7,21 @@ import redis
 
 app = Flask(__name__)
 CORS(app)
-r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+redis_url = 'rediss://red-cp1lchmct0pc73d37gl0:KQhCZrgGRc4HGfnjlk2H6iIsJZHTbB5r@oregon-redis.render.com:6379'
+r = redis.Redis.from_url(redis_url, db=0, decode_responses=True)
+
+def test_redis():
+    try:
+        # Setting a key
+        r.set('test_key', 'Hello, secure Redis!')
+        # Getting a key
+        value = r.get('test_key')
+        print(f'The value of "test_key" is: {value}')
+    except Exception as e:
+        print(f"Failed to connect to Redis: {str(e)}")
+
+# Call the test function
+test_redis()
 
 try:
     response = r.ping()
