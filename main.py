@@ -3,9 +3,27 @@ import requests
 import json
 from datetime import datetime
 from flask_cors import CORS
+import redis
 
 app = Flask(__name__)
 CORS(app)
+r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+
+try:
+    response = r.ping()
+    print("Redis is connected:", response)
+except redis.exceptions.ConnectionError as e:
+    print("Redis connection error:", str(e))
+
+def add_daoip7_schema(schema_id):
+    """Add a new schema ID to the Redis set of DAOIP7 compliant schemas."""
+    r.sadd("daoip7_schemas", schema_id)
+
+def get_daoip7_schemas():
+    """Retrieve all DAOIP7 compliant schema IDs."""
+    return r.smembers("daoip7_schemas")
+
+
 
 def convert_unix_to_utc(unix_time):
     """Converts UNIX timestamp to a UTC datetime string."""
@@ -36,7 +54,8 @@ def populate_daoip7_compliant_schemas(schema_id):
     if response.status_code == 200:
         data = response.json().get('data', {}).get('schema', {}).get('attestations', [])
         daoip7_schemas = extract_daoip7_schemas(data)
-        return daoip7_schemas
+        schemas = get_daoip7_schemas()
+        return schemas
     else:
         raise Exception(f"Failed to fetch data with status code {response.status_code}")
 
@@ -48,6 +67,7 @@ def extract_daoip7_schemas(attestations):
         for item in decoded_data_json:
             if item['name'] == 'schemaId':
                 unique_schemas.add(item['value']['value'])
+                add_daoip7_schema(item['value']['value'])
     return list(unique_schemas)
 
 # Example usage:
@@ -153,7 +173,7 @@ def get_attestations(attester_address):
 
             for i in range(len(array_fields["schemaUID"])):
                 schema_id = array_fields['schemaUID'][i]
-                if schema_id in daoip7_schemas:
+                if schema_id in daoip7_schemas: # Context set check
                     schema_details = fetch_schema_details(schema_id) or {}
                     if not schema_details:  # Skip if schema_details is empty
                         continue
