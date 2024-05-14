@@ -14,6 +14,48 @@ def convert_unix_to_utc(unix_time):
 GRAPHQL_URL = 'https://optimism.easscan.org/graphql'
 DAO_REGISTRY_SCHEMA = '0x25eb07102ee3f4f86cd0b0c4393457965b742b8acc94aa3ddbf2bc3f62ed1381'
 
+def populate_daoip7_compliant_schemas(schema_id):
+    """Fetch attestations for a given schema ID and populate a list with DAOIP7 compliant schema IDs from decoded JSON."""
+    url = 'https://optimism.easscan.org/graphql'  # Replace with the actual GraphQL endpoint if different
+    query = '''
+    query Schema($where: SchemaWhereUniqueInput!) {
+      schema(where: $where) {
+        attestations {
+          decodedDataJson
+        }
+      }
+    }
+    '''
+    variables = {
+        "where": {
+            "id": schema_id
+        }
+    }
+
+    response = requests.post(url, json={'query': query, 'variables': variables}, headers={"Content-Type": "application/json"})
+    if response.status_code == 200:
+        data = response.json().get('data', {}).get('schema', {}).get('attestations', [])
+        daoip7_schemas = extract_daoip7_schemas(data)
+        return daoip7_schemas
+    else:
+        raise Exception(f"Failed to fetch data with status code {response.status_code}")
+
+def extract_daoip7_schemas(attestations):
+    """Extract unique DAOIP7 compliant schema IDs from a list of attestations."""
+    unique_schemas = set()
+    for attestation in attestations:
+        decoded_data_json = json.loads(attestation['decodedDataJson'])
+        for item in decoded_data_json:
+            if item['name'] == 'schemaId':
+                unique_schemas.add(item['value']['value'])
+    return list(unique_schemas)
+
+# Example usage:
+schema_id = "0xcc6c9b07bfccd15c8f313d23bf4389fb75629a620c5fa669c898bf1e023f2508" #Context schema on OP Mainnet
+daoip7_schemas = populate_daoip7_compliant_schemas(schema_id)
+print("DAOIP7 Compliant Schema IDs:", daoip7_schemas)
+
+
 def fetch_attestations(attester_address):
     query = '''
     query Attestations($attesterAddress: [String!]) {
@@ -111,24 +153,27 @@ def get_attestations(attester_address):
 
             for i in range(len(array_fields["schemaUID"])):
                 schema_id = array_fields['schemaUID'][i]
-                schema_details = fetch_schema_details(schema_id) or {}
-                if not schema_details:  # Skip if schema_details is empty
+                if schema_id in daoip7_schemas:
+                    schema_details = fetch_schema_details(schema_id) or {}
+                    if not schema_details:  # Skip if schema_details is empty
+                        continue
+                    structured_schemas_by_attester.append({
+                        "schemaUID": array_fields['schemaUID'][i],
+                        "schemaDescription": array_fields['schemaDescription'][i],
+                        "networkID": array_fields['networkID'][i],
+                        "schemaDetails": {
+                            "creator": schema_details.get("creator", ""),
+                            "id": schema_details.get("id", ""),
+                            "resolver": schema_details.get("resolver", ""),
+                            "revocable": schema_details.get("revocable", False),
+                            "schema": schema_details.get("schema", ""),
+                            "attestationsCount": schema_details.get("_count", {}).get("attestations", 0),
+                            "time": convert_unix_to_utc(schema_details.get("time", 0)),
+                            "txid": schema_details.get("txid", "")
+                        }
+                    })
+                else:
                     continue
-                structured_schemas_by_attester.append({
-                    "schemaUID": array_fields['schemaUID'][i],
-                    "schemaDescription": array_fields['schemaDescription'][i],
-                    "networkID": array_fields['networkID'][i],
-                    "schemaDetails": {
-                        "creator": schema_details.get("creator", ""),
-                        "id": schema_details.get("id", ""),
-                        "resolver": schema_details.get("resolver", ""),
-                        "revocable": schema_details.get("revocable", False),
-                        "schema": schema_details.get("schema", ""),
-                        "attestationsCount": schema_details.get("_count", {}).get("attestations", 0),
-                        "time": convert_unix_to_utc(schema_details.get("time", 0)),
-                        "txid": schema_details.get("txid", "")
-                    }
-                })
 
         structured_data = {
             "issuerName": non_array_fields['issuerName'],
