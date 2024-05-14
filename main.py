@@ -7,8 +7,8 @@ import redis
 
 app = Flask(__name__)
 CORS(app)
-redis_url = 'redis://red-cp1lchmct0pc73d37gl0:6379'
-r = redis.Redis.from_url(redis_url, db=0, decode_responses=True)
+redis_url = 'localhost'
+r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
 
 def test_redis():
     try:
@@ -85,8 +85,8 @@ def extract_daoip7_schemas(attestations):
     return list(unique_schemas)
 
 # Example usage:
-schema_id = "0xcc6c9b07bfccd15c8f313d23bf4389fb75629a620c5fa669c898bf1e023f2508" #Context schema on OP Mainnet
-daoip7_schemas = populate_daoip7_compliant_schemas(schema_id)
+context_schema_id = "0xcc6c9b07bfccd15c8f313d23bf4389fb75629a620c5fa669c898bf1e023f2508" #Context schema on OP Mainnet
+daoip7_schemas = populate_daoip7_compliant_schemas(context_schema_id)
 print("DAOIP7 Compliant Schema IDs:", daoip7_schemas)
 
 
@@ -155,6 +155,8 @@ def get_attestations(attester_address):
 
     try:
         attestations_data = fetch_attestations(attester_address)
+        daoip7_schemas = populate_daoip7_compliant_schemas(context_schema_id)
+
 
         if not attestations_data:
             return jsonify({"message": "No attestations made by this Issuer"}), 404
@@ -245,8 +247,10 @@ def fetch_schema_attestations(schema_id):
 @app.route('/schema_attestations/<schema_id>', methods=['GET'])
 def get_schema_attestations(schema_id):
     try:
+        daoip7_schemas = populate_daoip7_compliant_schemas(context_schema_id)
         raw_attestations = fetch_schema_attestations(schema_id)
         unique_attesters = {attestation['attester'] for attestation in raw_attestations}
+
 
         results = []
 
