@@ -12,6 +12,7 @@ def convert_unix_to_utc(unix_time):
     return datetime.fromtimestamp(int(unix_time)).strftime('%Y-%m-%d %H:%M:%S')
 
 GRAPHQL_URL = 'https://optimism.easscan.org/graphql'
+DAO_REGISTRY_SCHEMA = '0x25eb07102ee3f4f86cd0b0c4393457965b742b8acc94aa3ddbf2bc3f62ed1381'
 
 def fetch_attestations(attester_address):
     query = '''
@@ -175,6 +176,17 @@ def get_schema_attestations(schema_id):
 
             if attester_response.status_code == 200:
                 attester_data = attester_response.get_json()
+
+                # Filter schemas to include only those where the creator matches the attester address
+                attester_data['schemas'] = [
+                    schema for schema in attester_data['schemas']
+                    if schema['schemaDetails']['creator'] == attester_address
+                ]
+
+                # Check if there are valid schemas after filtering; if not, continue to the next attester
+                if not attester_data['schemas']:
+                    continue
+
                 attester_data['attesterAddress'] = attester_address
                 results.append(attester_data)
             else:
@@ -187,6 +199,8 @@ def get_schema_attestations(schema_id):
         return jsonify(results)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
 
 @app.route('/', methods=['GET'])
 def get_home():
