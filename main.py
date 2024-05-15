@@ -4,12 +4,15 @@ import json
 from datetime import datetime
 from flask_cors import CORS
 import redis
+import re
 
 app = Flask(__name__)
 CORS(app)
 redis_url = 'redis://red-cp1lchmct0pc73d37gl0:6379'
 r = redis.Redis.from_url(redis_url, db=0, decode_responses=True)
 
+# redis_url = 'localhost'
+# r = redis.Redis(host=redis_url, port=6379, db=0, decode_responses=True)
 def test_redis():
     try:
         # Setting a key
@@ -37,6 +40,8 @@ def get_daoip7_schemas():
     """Retrieve all DAOIP7 compliant schema IDs."""
     return r.smembers("daoip7_schemas")
 
+def contains_word_context(schema_str):
+    return re.search(r'\bcontext\b', schema_str, re.IGNORECASE) is not None
 
 
 def convert_unix_to_utc(unix_time):
@@ -189,10 +194,12 @@ def get_attestations(attester_address):
 
             for i in range(len(array_fields["schemaUID"])):
                 schema_id = array_fields['schemaUID'][i]
-                if schema_id in daoip7_schemas: # Context set check
-                    schema_details = fetch_schema_details(schema_id) or {}
-                    if not schema_details:  # Skip if schema_details is empty
-                        continue
+                schema_details = fetch_schema_details(schema_id) or {}
+                
+                if not schema_details:  # Skip if schema_details is empty
+                    continue  
+                schema_text = schema_details.get("schema", "{}")
+                if schema_id in daoip7_schemas: # Context set check                
                     structured_schemas_by_attester.append({
                         "schemaUID": array_fields['schemaUID'][i],
                         "schemaDescription": array_fields['schemaDescription'][i],
@@ -209,7 +216,24 @@ def get_attestations(attester_address):
                         }
                     })
                 else:
-                    continue
+                    if contains_word_context(schema_text):
+                        structured_schemas_by_attester.append({
+                            "schemaUID": schema_id,
+                            "schemaDescription": array_fields['schemaDescription'][i],
+                            "networkID": array_fields['networkID'][i],
+                            "schemaDetails": {
+                                "creator": schema_details.get("creator", ""),
+                                "id": schema_details.get("id", ""),
+                                "resolver": schema_details.get("resolver", ""),
+                                "revocable": schema_details.get("revocable", False),
+                                "schema": schema_details.get("schema", ""),
+                                "attestationsCount": schema_details.get("_count", {}).get("attestations", 0),
+                                "time": convert_unix_to_utc(schema_details.get("time", 0)),
+                                "txid": schema_details.get("txid", "")
+                            }
+                        })
+                    else:
+                        continue  # Optionally handle cases where 'context' is not found
 
         structured_data = {
             "issuerName": non_array_fields['issuerName'],
