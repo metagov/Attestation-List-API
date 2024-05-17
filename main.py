@@ -5,14 +5,23 @@ from datetime import datetime
 from flask_cors import CORS
 import redis
 import re
+from eas_graphql_urls import EASGraphQLURLs
+from schema_ids import SchemaIDs
+
+
 
 app = Flask(__name__)
 CORS(app)
-redis_url = 'redis://red-cp1lchmct0pc73d37gl0:6379'
-r = redis.Redis.from_url(redis_url, db=0, decode_responses=True)
+# redis_url = 'redis://red-cp1lchmct0pc73d37gl0:6379'
+# r = redis.Redis.from_url(redis_url, db=0, decode_responses=True)
 
-# redis_url = 'localhost'
-# r = redis.Redis(host=redis_url, port=6379, db=0, decode_responses=True)
+redis_url = 'localhost'
+r = redis.Redis(host=redis_url, port=6379, db=0, decode_responses=True)
+
+urls = EASGraphQLURLs()
+
+print(urls.get_url_by_network_id('42161'))  # Should print False if no such ID exists
+
 def test_redis():
     try:
         # Setting a key
@@ -23,7 +32,6 @@ def test_redis():
     except Exception as e:
         print(f"Failed to connect to Redis: {str(e)}")
 
-# Call the test function
 test_redis()
 
 try:
@@ -40,20 +48,26 @@ def get_daoip7_schemas():
     """Retrieve all DAOIP7 compliant schema IDs."""
     return r.smembers("daoip7_schemas")
 
+def hex_to_decimal(network_tuple):
+    """Extracts the hex value from the network tuple and converts it to a decimal integer."""
+    if network_tuple and isinstance(network_tuple, tuple) and len(network_tuple) > 0:
+        network_dict = network_tuple[0]  # Extract the dictionary from the tuple
+        hex_value = network_dict.get('hex', '0x0')  # Get hex value or default to '0x0' if not found
+        return int(hex_value, 16)  # Convert hex to decimal
+    return 0  # Return 0 if input is not as expected
+
 def contains_word_context(schema_str):
     return re.search(r'\bcontext\b', schema_str, re.IGNORECASE) is not None
-
 
 def convert_unix_to_utc(unix_time):
     """Converts UNIX timestamp to a UTC datetime string."""
     return datetime.fromtimestamp(int(unix_time)).strftime('%Y-%m-%d %H:%M:%S')
 
-GRAPHQL_URL = 'https://optimism.easscan.org/graphql'
 DAO_REGISTRY_SCHEMA = '0x25eb07102ee3f4f86cd0b0c4393457965b742b8acc94aa3ddbf2bc3f62ed1381'
 
-def populate_daoip7_compliant_schemas(schema_id):
+def populate_daoip7_compliant_schemas(schema_id, network_id=10):
     """Fetch attestations for a given schema ID and populate a list with DAOIP7 compliant schema IDs from decoded JSON."""
-    url = 'https://optimism.easscan.org/graphql'  # Replace with the actual GraphQL endpoint if different
+    url = urls.get_url_by_network_id(network_id)  # Use the correct GraphQL endpoint
     query = '''
     query Schema($where: SchemaWhereUniqueInput!) {
       schema(where: $where) {
@@ -63,23 +77,38 @@ def populate_daoip7_compliant_schemas(schema_id):
       }
     }
     '''
-    variables = {
-        "where": {
-            "id": schema_id
-        }
-    }
+    variables = {"where": {"id": schema_id}}
 
-    response = requests.post(url, json={'query': query, 'variables': variables}, headers={"Content-Type": "application/json"})
-    if response.status_code == 200:
-        data = response.json().get('data', {}).get('schema', {}).get('attestations', [])
-        daoip7_schemas = extract_daoip7_schemas(data)
-        schemas = get_daoip7_schemas()
-        return schemas
-    else:
-        raise Exception(f"Failed to fetch data with status code {response.status_code}")
+    try:
+        response = requests.post(url, json={'query': query, 'variables': variables}, headers={"Content-Type": "application/json"})
+        if response.status_code == 200:
+            # Attempt to parse the JSON response
+            try:
+                json_response = response.json()
+            except json.JSONDecodeError as e:
+                app.logger.error(f"Failed to decode JSON response: {str(e)}")
+                return []  # or handle differently
+
+            # Check for the existence of data and schema
+            data = json_response.get('data', {})
+            if not data or 'schema' not in data or not data['schema'].get('attestations'):
+                app.logger.info(f"No valid data or attestations found for schema ID {schema_id} on network {network_id}")
+                return []  # Return an empty list or handle this case as needed
+
+            attestations = data['schema']['attestations']
+            daoip7_schemas = extract_daoip7_schemas(attestations)
+            schemas = get_daoip7_schemas()
+            return schemas
+        else:
+            app.logger.error(f"Request failed with status code {response.status_code}")
+            return []  # or raise an exception
+    except requests.exceptions.RequestException as e:
+        app.logger.error(f"HTTP request exception: {str(e)}")
+        return []  # or handle differently
 
 def extract_daoip7_schemas(attestations):
     """Extract unique DAOIP7 compliant schema IDs from a list of attestations."""
+    """EAS Schema Ids are same for same schema, across networks, ie unique schemas list is network agnostic"""
     unique_schemas = set()
     for attestation in attestations:
         decoded_data_json = json.loads(attestation['decodedDataJson'])
@@ -91,11 +120,11 @@ def extract_daoip7_schemas(attestations):
 
 # Example usage:
 context_schema_id = "0xcc6c9b07bfccd15c8f313d23bf4389fb75629a620c5fa669c898bf1e023f2508" #Context schema on OP Mainnet
-daoip7_schemas = populate_daoip7_compliant_schemas(context_schema_id)
-print("DAOIP7 Compliant Schema IDs:", daoip7_schemas)
+daoip7_schemas = populate_daoip7_compliant_schemas(context_schema_id, 10) 
+print("DAOIP7 Compliant Schema IDs populated of OP network:", daoip7_schemas)
 
 
-def fetch_attestations(attester_address):
+def fetch_attestations(attester_address, networkId = 10):
     query = '''
     query Attestations($attesterAddress: [String!]) {
       attestations(where: {
@@ -111,17 +140,22 @@ def fetch_attestations(attester_address):
         "attesterAddress": [attester_address]
     }
     response = requests.post(
-        GRAPHQL_URL,
+        urls.get_url_by_network_id(networkId),
         json={'query': query, 'variables': variables},
         headers={"Content-Type": "application/json"}
     )
     if response.status_code == 200:
-        print("200 OK")
-        return response.json().get('data', {}).get('attestations', [])
+        data = response.json()
+        if data and 'data' in data and 'attestations' in data['data']:
+            return data['data']['attestations']
+        else:
+            app.logger.error("Data is missing 'attestations' key or is malformed: {}".format(data))
+            return []
     else:
-        raise Exception(f"Query failed with status code {response.status_code}")
-
-def fetch_schema_details(schema_id):
+        app.logger.error("Failed to fetch data with status code {}".format(response.status_code))
+        return []
+    
+def fetch_schema_details(schema_id, networkId = 10):
     query = '''
     query Schema($schemaWhere2: SchemaWhereUniqueInput!) {
       schema(where: $schemaWhere2) {
@@ -144,31 +178,36 @@ def fetch_schema_details(schema_id):
         }
     }
     response = requests.post(
-        GRAPHQL_URL,
+        urls.get_url_by_network_id(networkId),
         json={'query': query, 'variables': variables},
         headers={"Content-Type": "application/json"}
     )
     if response.status_code == 200:
-        return response.json().get('data', {}).get('schema', {})
+        data= response.json().get('data', {}).get('schema', {})
+        if not data:
+            print(f"No data returned for schema ID {schema_id}")
+            return {}
+        return data
     else:
-        raise Exception(f"Query failed with status code {response.status_code}")
+        raise Exception(f"fetch_schema_details Query failed with status code {response.status_code}")
 
 @app.route('/attestations/<attester_address>', methods=['GET'])
 def get_attestations(attester_address):
     if not attester_address:
-        return jsonify({"error": "Attester address is required."}), 400
+        return {"error": "Attester address is required."}, 400
 
     try:
         attestations_data = fetch_attestations(attester_address)
-        daoip7_schemas = populate_daoip7_compliant_schemas(context_schema_id)
-
-
         if not attestations_data:
-            return jsonify({"message": "No attestations made by this Issuer"}), 404
+            return {"message": "No attestations made by this Issuer"}, 404
+
 
         structured_schemas_by_attester = []
         for attestation in attestations_data:
             decoded_data_list = json.loads(attestation['decodedDataJson'])
+            if not decoded_data_list:
+                app.logger.error("Missing 'decodedDataJson' in attestation: {}".format(attestation))
+                continue
             non_array_fields = {
                 "issuerName": "",
                 "issuerDescription": "",
@@ -194,12 +233,14 @@ def get_attestations(attester_address):
 
             for i in range(len(array_fields["schemaUID"])):
                 schema_id = array_fields['schemaUID'][i]
-                schema_details = fetch_schema_details(schema_id) or {}
-                
-                if not schema_details:  # Skip if schema_details is empty
+                network_id = int(array_fields['networkID'][i]['hex'],16)
+                daoip7_schemas = populate_daoip7_compliant_schemas(context_schema_id, network_id)
+                schema_details = fetch_schema_details(schema_id, network_id) or {}
+                print(schema_details)
+                if (not schema_details):  # Skip if schema_details is empty
                     continue  
-                schema_text = schema_details.get("schema", "{}")
-                if schema_id in daoip7_schemas: # Context set check                
+
+                if schema_id in daoip7_schemas: # Context set check   # Network agnostic check      
                     structured_schemas_by_attester.append({
                         "schemaUID": array_fields['schemaUID'][i],
                         "schemaDescription": array_fields['schemaDescription'][i],
@@ -216,6 +257,7 @@ def get_attestations(attester_address):
                         }
                     })
                 else:
+                    schema_text = schema_details.get("schema", "{}")
                     if contains_word_context(schema_text):
                         structured_schemas_by_attester.append({
                             "schemaUID": schema_id,
@@ -243,11 +285,11 @@ def get_attestations(attester_address):
             "schemas": structured_schemas_by_attester,
         }
 
-        return jsonify(structured_data)
+        return structured_data, 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return {"error in get_attestations": str(e)}, 500
 
-def fetch_schema_attestations(schema_id):
+def fetch_schema_attestations(schema_id, network_id=10):
     query = '''
     query ($schemaWhere2: SchemaWhereUniqueInput!) {
       schema(where: $schemaWhere2) {
@@ -259,14 +301,14 @@ def fetch_schema_attestations(schema_id):
     '''
     variables = {"schemaWhere2": {"id": schema_id}}
     response = requests.post(
-        GRAPHQL_URL,
+        urls.get_url_by_network_id(network_id),
         json={'query': query, 'variables': variables},
         headers={"Content-Type": "application/json"}
     )
     if response.status_code == 200:
         return response.json().get('data', {}).get('schema', {}).get('attestations', [])
     else:
-        raise Exception(f"Query failed with status code {response.status_code}")
+        raise Exception(f"fetch_schema_attestations Query failed with status code {response.status_code}")
 
 @app.route('/schema_attestations/<schema_id>', methods=['GET'])
 def get_schema_attestations(schema_id):
@@ -278,10 +320,11 @@ def get_schema_attestations(schema_id):
         results = []
 
         for attester_address in unique_attesters:
-            attester_response = get_attestations(attester_address)
+            attester_response, status_code = get_attestations(attester_address)  # Call and unpack the tuple
 
-            if attester_response.status_code == 200:
-                attester_data = attester_response.get_json()
+            if status_code == 200:
+                attester_data = attester_response
+                print("success")
 
                 # Filter schemas to include only those where the creator matches the attester address
                 attester_data['schemas'] = [
@@ -296,15 +339,16 @@ def get_schema_attestations(schema_id):
                 attester_data['attesterAddress'] = attester_address
                 results.append(attester_data)
             else:
+                print('fail')
                 results.append({
                     "error": f"Failed to fetch data for attester {attester_address}",
-                    "statusCode": attester_response.status_code,
+                    "statusCode": status_code,
                     "attesterAddress": attester_address
                 })
 
-        return jsonify(results)
+        return jsonify(results), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error in get_schema_attestations": str(e)}), 500
 
 
 
