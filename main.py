@@ -82,18 +82,16 @@ def populate_daoip7_compliant_schemas(schema_id, network_id=10):
     try:
         response = requests.post(url, json={'query': query, 'variables': variables}, headers={"Content-Type": "application/json"})
         if response.status_code == 200:
-            # Attempt to parse the JSON response
             try:
                 json_response = response.json()
             except json.JSONDecodeError as e:
                 app.logger.error(f"Failed to decode JSON response: {str(e)}")
-                return []  # or handle differently
+                return [] 
 
-            # Check for the existence of data and schema
             data = json_response.get('data', {})
             if not data or 'schema' not in data or not data['schema'].get('attestations'):
                 app.logger.info(f"No valid data or attestations found for schema ID {schema_id} on network {network_id}")
-                return []  # Return an empty list or handle this case as needed
+                return [] 
 
             attestations = data['schema']['attestations']
             daoip7_schemas = extract_daoip7_schemas(attestations)
@@ -101,10 +99,10 @@ def populate_daoip7_compliant_schemas(schema_id, network_id=10):
             return schemas
         else:
             app.logger.error(f"Request failed with status code {response.status_code}")
-            return []  # or raise an exception
+            return []  
     except requests.exceptions.RequestException as e:
         app.logger.error(f"HTTP request exception: {str(e)}")
-        return []  # or handle differently
+        return [] 
 
 def extract_daoip7_schemas(attestations):
     """Extract unique DAOIP7 compliant schema IDs from a list of attestations."""
