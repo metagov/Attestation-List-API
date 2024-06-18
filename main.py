@@ -72,6 +72,19 @@ def hex_to_decimal(network_tuple: tuple) -> int:
         return int(hex_value, 16)
     return 0
 
+def convert_network_id(network_id):
+    try:
+        if isinstance(network_id, dict) and 'hex' in network_id:
+            return int(network_id['hex'], 16)  # Convert hex to int
+        elif isinstance(network_id, int):
+            return network_id  # Directly return the integer
+        else:
+            raise ValueError("Invalid networkID format")
+    except Exception as e:
+        app.logger.error(f"Error converting networkID: {network_id}, Error: {str(e)}")
+        raise
+    
+    
 def contains_word_context(schema_str: str) -> bool:
     return re.search(r'\bcontext\b', schema_str, re.IGNORECASE) is not None
 
@@ -273,9 +286,9 @@ def get_attestations(attester_address: str):
                 # This section assumes you have defined `populate_daoip7_compliant_schemas` and `contains_word_context`.
                 if schema_id in populate_daoip7_compliant_schemas(schema_id, network_id):
                     structured_schemas_by_attester.append({
-                        "schemaUID": schema_id,
+                        "schemaUID": array_fields['schemaUID'][i],
                         "schemaDescription": array_fields['schemaDescription'][i],
-                        "networkID": network_id,
+                        "networkID": array_fields['networkID'][i],
                         "schemaDetails": {
                             "creator": schema_details.get("creator", ""),
                             "id": schema_details.get("id", ""),
@@ -291,9 +304,9 @@ def get_attestations(attester_address: str):
                     schema_text = schema_details.get("schema", "{}")
                     if contains_word_context(schema_text):
                         structured_schemas_by_attester.append({
-                            "schemaUID": schema_id,
+                            "schemaUID": array_fields['schemaUID'][i],
                             "schemaDescription": array_fields['schemaDescription'][i],
-                            "networkID": network_id,
+                            "networkID": array_fields['networkID'][i],
                             "schemaDetails": {
                                 "creator": schema_details.get("creator", ""),
                                 "id": schema_details.get("id", ""),
