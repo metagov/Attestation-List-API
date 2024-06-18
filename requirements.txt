@@ -1,5 +1,7 @@
 Flask==2.1.2
 requests==2.27.1
 Werkzeug==2.3.7
-flask_cors
-redis
+flask_cors==4.0.0
+redis==5.0.4
+orjson==3.10.4
+flask-profiler==1.8.1
