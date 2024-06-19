@@ -12,11 +12,11 @@ from schema_ids import SchemaIDs
 
 app = Flask(__name__)
 CORS(app)
-redis_url = 'redis://red-cp1lchmct0pc73d37gl0:6379'
-r = redis.Redis.from_url(redis_url, db=0, decode_responses=True)
+# redis_url = 'redis://red-cp1lchmct0pc73d37gl0:6379'
+# r = redis.Redis.from_url(redis_url, db=0, decode_responses=True)
 
-# redis_url = 'localhost'
-# r = redis.Redis(host=redis_url, port=6379, db=0, decode_responses=True)
+redis_url = 'localhost'
+r = redis.Redis(host=redis_url, port=6379, db=0, decode_responses=True)
 
 urls = EASGraphQLURLs()
 
@@ -189,7 +189,7 @@ def fetch_schema_details(schema_id, networkId = 10):
     else:
         raise Exception(f"fetch_schema_details Query failed with status code {response.status_code}")
 
-@app.route('/attestations/<attester_address>', methods=['GET'])
+# @app.route('/attestations/<attester_address>', methods=['GET'])
 def get_attestations(attester_address):
     if not attester_address:
         return {"error": "Attester address is required."}, 400
@@ -286,6 +286,130 @@ def get_attestations(attester_address):
         return structured_data, 200
     except Exception as e:
         return {"error in get_attestations": str(e)}, 500
+    
+
+
+@app.route('/attestations/<attester_address>', methods=['GET'])
+def get_attestations_new(attester_address,refresh=None):
+    if not attester_address:
+        return {"error": "Attester address is required."}, 400
+
+    if refresh is None: 
+        refresh = request.args.get('refresh', 'false').lower() == 'true'
+
+    try:
+        cache_key = f"attestations_{attester_address}"
+
+        if not refresh:
+            # Attempt to retrieve cached data
+            cached_data = r.get(cache_key)
+            if cached_data:
+                cached_data = json.loads(cached_data)
+                last_cached_time = cached_data.get('timestamp')
+                current_time = datetime.now().timestamp()
+
+                # Check if the cached data is older than an hour (3600 seconds)
+                if current_time - last_cached_time < 3600:
+                    print("Returning cached data.")
+                    return jsonify(cached_data['data']), 200
+                else:
+                    print("Cache expired, fetching new data.")
+
+        # Fetch new data if not in cache or cache is expired
+        attestations_data = fetch_attestations(attester_address)
+        if not attestations_data:
+            return {"message": "No attestations made by this Issuer"}, 404
+
+        structured_schemas_by_attester = []
+        for attestation in attestations_data:
+            decoded_data_list = json.loads(attestation['decodedDataJson'])
+            if not decoded_data_list:
+                app.logger.error("Missing 'decodedDataJson' in attestation: {}".format(attestation))
+                continue
+            non_array_fields = {
+                "issuerName": "",
+                "issuerDescription": "",
+                "logo": "",
+                "apiDocsURI": "",
+                "attesterAddress": ""
+            }
+
+            array_fields = {
+                "schemaUID": [],
+                "schemaDescription": [],
+                "networkID": []
+            }
+
+            for decoded_data_item in decoded_data_list:
+                key_name = decoded_data_item['name']
+                value = decoded_data_item['value']['value']
+
+                if key_name in non_array_fields:
+                    non_array_fields[key_name] = value
+                elif key_name in array_fields and isinstance(value, list):
+                    array_fields[key_name].extend(value)
+
+            for i in range(len(array_fields["schemaUID"])):
+                schema_id = array_fields['schemaUID'][i]
+                network_id = int(array_fields['networkID'][i]['hex'],16)
+                daoip7_schemas = populate_daoip7_compliant_schemas(context_schema_id, network_id)
+                schema_details = fetch_schema_details(schema_id, network_id) or {}
+                print(schema_details)
+                if (not schema_details):  # Skip if schema_details is empty
+                    continue  
+
+                if schema_id in daoip7_schemas: # Context set check   # Network agnostic check      
+                    structured_schemas_by_attester.append({
+                        "schemaUID": array_fields['schemaUID'][i],
+                        "schemaDescription": array_fields['schemaDescription'][i],
+                        "networkID": array_fields['networkID'][i],
+                        "schemaDetails": {
+                            "creator": schema_details.get("creator", ""),
+                            "id": schema_details.get("id", ""),
+                            "resolver": schema_details.get("resolver", ""),
+                            "revocable": schema_details.get("revocable", False),
+                            "schema": schema_details.get("schema", ""),
+                            "attestationsCount": schema_details.get("_count", {}).get("attestations", 0),
+                            "time": convert_unix_to_utc(schema_details.get("time", 0)),
+                            "txid": schema_details.get("txid", "")
+                        }
+                    })
+                else:
+                    schema_text = schema_details.get("schema", "{}")
+                    if contains_word_context(schema_text):
+                        structured_schemas_by_attester.append({
+                            "schemaUID": schema_id,
+                            "schemaDescription": array_fields['schemaDescription'][i],
+                            "networkID": array_fields['networkID'][i],
+                            "schemaDetails": {
+                                "creator": schema_details.get("creator", ""),
+                                "id": schema_details.get("id", ""),
+                                "resolver": schema_details.get("resolver", ""),
+                                "revocable": schema_details.get("revocable", False),
+                                "schema": schema_details.get("schema", ""),
+                                "attestationsCount": schema_details.get("_count", {}).get("attestations", 0),
+                                "time": convert_unix_to_utc(schema_details.get("time", 0)),
+                                "txid": schema_details.get("txid", "")
+                            }
+                        })
+                    else:
+                        continue  # Optionally handle cases where 'context' is not found
+        structured_data = {
+            "issuerName": non_array_fields['issuerName'],
+            "issuerDescription": non_array_fields['issuerDescription'],
+            "logo": non_array_fields['logo'],
+            "apiDocsURI": non_array_fields['apiDocsURI'],
+            "schemas": structured_schemas_by_attester,
+            "timestamp": datetime.now().timestamp()  # Include current time as timestamp
+        }
+
+        # Cache the results for 1 hour
+        r.set(cache_key, json.dumps({"data": structured_data, "timestamp": structured_data['timestamp']}), ex=3600)
+        print("Data cached for 1 hour.")
+
+        return jsonify(structured_data), 200
+    except Exception as e:
+        return {"error in get_attestations": str(e)}, 500
 
 def fetch_schema_attestations(schema_id, network_id=10):
     query = '''
@@ -308,7 +432,7 @@ def fetch_schema_attestations(schema_id, network_id=10):
     else:
         raise Exception(f"fetch_schema_attestations Query failed with status code {response.status_code}")
 
-@app.route('/schema_attestations/<schema_id>', methods=['GET'])
+# @app.route('/schema_attestations/<schema_id>', methods=['GET'])
 def get_schema_attestations(schema_id):
     try:
         raw_attestations = fetch_schema_attestations(schema_id)
@@ -347,6 +471,67 @@ def get_schema_attestations(schema_id):
         return jsonify(results), 200
     except Exception as e:
         return jsonify({"error in get_schema_attestations": str(e)}), 500
+    
+
+
+
+@app.route('/schema_attestations/<schema_id>', methods=['GET'])
+def get_schema_attestations_new(schema_id, refresh=None):
+    if refresh is None:  # If refresh isn't provided as a function argument, look for it in the request
+        refresh = request.args.get('refresh', 'false').lower() == 'true'
+
+    cache_key = f"schema_attestations_{schema_id}"
+    
+    try:
+        if not refresh:
+            cached_data = r.get(cache_key)
+            if cached_data:
+                print("Returning cached data.")
+                return jsonify(json.loads(cached_data)), 200
+            else:
+                print("Cache is empty or refresh requested, fetching new data.")
+                
+        raw_attestations = fetch_schema_attestations(schema_id)
+        daoip7_schemas = populate_daoip7_compliant_schemas(context_schema_id)
+        unique_attesters = {attestation['attester'] for attestation in raw_attestations}
+
+        results = []
+
+        for attester_address in unique_attesters:
+            attester_response, status_code = get_attestations(attester_address)  # Call and unpack the tuple
+
+            if status_code == 200:
+                attester_data = attester_response
+                print("success")
+
+                # Filter schemas to include only those where the creator matches the attester address
+                attester_data['schemas'] = [
+                    schema for schema in attester_data['schemas']
+                    if schema['schemaDetails']['creator'] == attester_address
+                ]
+
+                # Check if there are valid schemas after filtering; if not, continue to the next attester
+                if not attester_data['schemas']:
+                    continue
+
+                attester_data['attesterAddress'] = attester_address
+                results.append(attester_data)
+            else:
+                print('fail')
+                results.append({
+                    "error": f"Failed to fetch data for attester {attester_address}",
+                    "statusCode": status_code,
+                    "attesterAddress": attester_address
+                })
+        # Cache the results for 1 hour
+        r.set(cache_key, json.dumps(results), ex=3600)
+        print("Data cached for 1 hour.")
+
+        return jsonify(results), 200
+    except Exception as e:
+        return jsonify({"error in get_schema_attestations": str(e)}), 500
+    
+    
 
 
 
