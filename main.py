@@ -12,11 +12,11 @@ from schema_ids import SchemaIDs
 
 app = Flask(__name__)
 CORS(app)
-redis_url = 'redis://red-cp1lchmct0pc73d37gl0:6379'
-r = redis.Redis.from_url(redis_url, db=0, decode_responses=True)
+# redis_url = 'redis://red-cp1lchmct0pc73d37gl0:6379'
+# r = redis.Redis.from_url(redis_url, db=0, decode_responses=True)
 
-# redis_url = 'localhost'
-# r = redis.Redis(host=redis_url, port=6379, db=0, decode_responses=True)
+redis_url = 'localhost'
+r = redis.Redis(host=redis_url, port=6379, db=0, decode_responses=True)
 
 urls = EASGraphQLURLs()
 
@@ -297,48 +297,28 @@ def get_attestations_new(attester_address,refresh=None):
                 try:
                     schema_id = array_fields['schemaUID'][i]
                     network_id = int(array_fields['networkID'][i]['hex'], 16)
-                    daoip7_schemas = populate_daoip7_compliant_schemas(context_schema_id, network_id)
+                    #daoip7_schemas = populate_daoip7_compliant_schemas(context_schema_id, network_id)
                     schema_details = fetch_schema_details(schema_id, network_id) or {}
                     print(schema_details)
                     if not schema_details:  # Skip if schema_details is empty
                         continue
-
-                    if schema_id in daoip7_schemas:  # Context set check   # Network agnostic check      
-                        structured_schemas_by_attester.append({
-                            "schemaUID": array_fields['schemaUID'][i],
-                            "schemaDescription": array_fields['schemaDescription'][i],
-                            "networkID": array_fields['networkID'][i],
-                            "schemaDetails": {
-                                "creator": schema_details.get("creator", ""),
-                                "id": schema_details.get("id", ""),
-                                "resolver": schema_details.get("resolver", ""),
-                                "revocable": schema_details.get("revocable", False),
-                                "schema": schema_details.get("schema", ""),
-                                "attestationsCount": schema_details.get("_count", {}).get("attestations", 0),
-                                "time": convert_unix_to_utc(schema_details.get("time", 0)),
-                                "txid": schema_details.get("txid", "")
-                            }
-                        })
-                    else:
-                        schema_text = schema_details.get("schema", "{}")
-                        if contains_word_context(schema_text):
-                            structured_schemas_by_attester.append({
-                                "schemaUID": schema_id,
-                                "schemaDescription": array_fields['schemaDescription'][i],
-                                "networkID": array_fields['networkID'][i],
-                                "schemaDetails": {
-                                    "creator": schema_details.get("creator", ""),
-                                    "id": schema_details.get("id", ""),
-                                    "resolver": schema_details.get("resolver", ""),
-                                    "revocable": schema_details.get("revocable", False),
-                                    "schema": schema_details.get("schema", ""),
-                                    "attestationsCount": schema_details.get("_count", {}).get("attestations", 0),
-                                    "time": convert_unix_to_utc(schema_details.get("time", 0)),
-                                    "txid": schema_details.get("txid", "")
-                                }
-                            })
-                        else:
-                            continue  # Optionally handle cases where 'context' is not found
+        
+                    structured_schemas_by_attester.append({
+                        "schemaUID": array_fields['schemaUID'][i],
+                        "schemaDescription": array_fields['schemaDescription'][i],
+                        "networkID": array_fields['networkID'][i],
+                        "schemaDetails": {
+                            "creator": schema_details.get("creator", ""),
+                            "id": schema_details.get("id", ""),
+                            "resolver": schema_details.get("resolver", ""),
+                            "revocable": schema_details.get("revocable", False),
+                            "schema": schema_details.get("schema", ""),
+                            "attestationsCount": schema_details.get("_count", {}).get("attestations", 0),
+                            "time": convert_unix_to_utc(schema_details.get("time", 0)),
+                            "txid": schema_details.get("txid", "")
+                        }
+                    })
+                    
                 except Exception as e:
                     app.logger.error(f"Error processing schema ID {schema_id} at index {i}: {str(e)}")
                     continue  # Optionally skip this iteration or handle the error as needed
@@ -413,7 +393,7 @@ def get_schema_attestations_new(schema_id, refresh=None):
             r.set(no_data_cache_key, 'true', ex=3600)
             return jsonify({"message": "No data found for this schema ID."}), 404
 
-        daoip7_schemas = populate_daoip7_compliant_schemas(context_schema_id)
+        #daoip7_schemas = populate_daoip7_compliant_schemas(context_schema_id)
         unique_attesters = {attestation['attester'] for attestation in raw_attestations}
 
         results = []
