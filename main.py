@@ -7,28 +7,27 @@ import redis
 import re
 from eas_graphql_urls import EASGraphQLURLs
 from schema_ids import SchemaIDs
+import os
 
 
 
 app = Flask(__name__)
 CORS(app)
-# redis_url = 'redis://red-cp1lchmct0pc73d37gl0:6379'
-# r = redis.Redis.from_url(redis_url, db=0, decode_responses=True)
+redis_url = os.getenv('REDIS_URL', 'localhost')
 
-redis_url = 'localhost'
-r = redis.Redis(host=redis_url, port=6379, db=0, decode_responses=True)
+if redis_url.startswith('redis://'):
+    r = redis.Redis.from_url(redis_url, db=0, decode_responses=True)
+else:
+    r = redis.Redis(host=redis_url, port=6379, db=0, decode_responses=True)
 
 urls = EASGraphQLURLs()
-
 #print(urls.get_url_by_network_id('42161'))  # Should print False if no such ID exists
-
 
 def add_to_blacklist(address):
     r.sadd("blacklisted_attesters", address)
 
 def is_blacklisted(address):
     return r.sismember("blacklisted_attesters", address)
-
 
 @app.route('/blacklist/<attester_address>', methods=['POST', 'DELETE', 'GET'])
 def manage_blacklist(attester_address):
